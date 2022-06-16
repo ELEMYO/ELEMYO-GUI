@@ -1,7 +1,8 @@
 # Graphical interface for signal visualization and interaction with ELEMYO sensors
-# 2022-06-01 by ELEMYO (https://github.com/ELEMYO/ELEMYO GUI)
+# 2022-06-16 by ELEMYO (https://github.com/ELEMYO/ELEMYO GUI)
 # 
 # Changelog:
+#     2022-06-16 - improved sample rate
 #     2022-06-01 - improved user interface
 #     2020-06-15 - initial release
 
@@ -61,12 +62,12 @@ class GUI(QtWidgets.QMainWindow):
     # Custom constructor 
     def initUI(self): 
         # Values
-        self.delay = 0.1 # Graphics update delay
-        self.setWindowTitle("ELEMYO GUI v1.1.0")
+        self.delay = 0.07 # Graphics update delay
+        self.setWindowTitle("ELEMYO GUI v1.1.1")
         self.setWindowIcon(QtGui.QIcon('img/icon.png'))
         
-        self.fs = 2500 # Sampling frequency in Hz
-        self.dt = 1/self.fs  # Time between two signal sempling in s
+        self.fs = 2000 # Sampling frequency in Hz
+        self.dt = 1/self.fs  # Time between two signal sempling in s  
         
         self.passLowFrec = 10 # Low frequency for band-pass filter
         self.passHighFrec = 200 # High frequency for band-pass filter
@@ -77,6 +78,7 @@ class GUI(QtWidgets.QMainWindow):
         self.l = 0 # Current sensor data point
         self.Time = [0]*self.dataWidth# Time array (in seconds)
         self.timeWidth = 10 # Plot window length in seconds
+        self.sampleNum = 0
         
         self.MovingAverage = MovingAverage(self.fs) # Variable for data envelope (for moving average method)
         
@@ -91,7 +93,7 @@ class GUI(QtWidgets.QMainWindow):
         
         # Accessory variables for data read from serial
         self.ms_len = 0;
-        self.msg_end = 0
+        self.msg_end = bytearray([0])
         
         # Menu panel
         self.COMports=QtWidgets.QComboBox()
@@ -248,7 +250,6 @@ class GUI(QtWidgets.QMainWindow):
             self.p[i].setPen(color=(100, 255, 255), width=0.8)
             self.pe[i].setPen(color=(255, 0, 0), width=1)
 
-        
         for i in range(5):
             self.pw[i+1].setXLink(self.pw[i])
         
@@ -410,8 +411,8 @@ class GUI(QtWidgets.QMainWindow):
             self.sensorsNumber.setDisabled(False)
             self.SignalTypeBox.setDisabled(False)
             self.ADCTypeBox.setDisabled(False)
+            time.sleep(1) 
             self.sensorsNumber.setValue(1) 
-
         else:
             self.refresh()
             self.serialMonitor.serialDisconnection()
@@ -446,13 +447,15 @@ class GUI(QtWidgets.QMainWindow):
     # Refresh data
     def refresh(self):
         self.l = 0
+        self.sampleNum = 0
         self.Time = [0]*self.dataWidth
         self.Data = np.zeros((6, self.dataWidth))
         self.DataEnvelope = np.zeros((6, self.dataWidth))
-        self.msg_end = 0     
+        self.msg_end = bytearray([0])     
         self.ms_len =  0
         self.slider.setValue(0)
         self.MovingAverage = MovingAverage(self.fs)
+        self.FFT = np.zeros((6, 2000))
 
     # Refresh screen
     def refreshForAction(self):
@@ -473,6 +476,7 @@ class GUI(QtWidgets.QMainWindow):
             self.textWindow.verticalScrollBar().setValue(self.textWindow.verticalScrollBar().maximum()-2)
             f = open(self.recordingFileName, "w") # Data file creation
             f.write(datetime.now().strftime("Date: %Y.%m.%d\rTime: %H:%M:%S") + "\r\n") # Data file name
+            f.write("Sample frequency: " + str(self.fs) + "\r\n") # Data file format
             f.write("File format: \r\ntime in s | 6 sensor data points \r\n") # Data file format
             f.close()
         else:
@@ -528,8 +532,16 @@ class GUI(QtWidgets.QMainWindow):
             self.textWindow.insertPlainText(datetime.now().strftime("[%H:%M:%S] ") + "playback from: " + self.loadFileName + "\n")
             self.textWindow.verticalScrollBar().setValue(self.textWindow.verticalScrollBar().maximum()-2)
             
-            for i in range (7):
-                self.loadFile.readline()
+            for i in range (9):
+                message = self.loadFile.readline()
+                if message[0:18] == "Sample frequency: ":
+                    self.fs = float(message[18:])
+                    self.dataWidth = self.dataWidth*self.dt
+                    self.MovingAverage.fs = self.fs
+                    self.dataWidth = int(self.dataWidth*self.fs)
+                    
+                    self.dataWidth = int(12*self.fs)
+                    self.refresh()
             message = self.loadFile.readline()
             s = message.split(' ')
             
@@ -564,7 +576,6 @@ class GUI(QtWidgets.QMainWindow):
 
     # Update
     def updateListening(self):
-        
         if (not self.liveFromSerialAction.isChecked()):
             self.serialMonitor.updatePorts()
                    
@@ -637,9 +648,9 @@ class GUI(QtWidgets.QMainWindow):
             
                 if self.bandstopAction.isChecked():
                     if (self.notchActiontypeBox.currentText() == "50 Hz"): 
-                        for j in range(4): Data[i] = self.butter_bandstop_filter(Data[i], 45 + j*50, 55 + j*50, self.fs)
+                        for j in range(int(self.fs//100)): Data[i] = self.butter_bandstop_filter(Data[i], 45 + j*50, 55 + j*50, self.fs)
                     if (self.notchActiontypeBox.currentText() == "60 Hz"):
-                        for j in range(3): Data[i] = self.butter_bandstop_filter(Data[i], 55 + j*60, 65 + j*60, self.fs)
+                        for j in range(int(self.fs//120)): Data[i] = self.butter_bandstop_filter(Data[i], 55 + j*60, 65 + j*60, self.fs)
                                 
                 if (self.bandpassAction.isChecked()) :
                     Data[i] = self.butter_bandpass_filter(Data[i], self.passLowFrec, self.passHighFrec, self.fs)
@@ -702,14 +713,14 @@ class GUI(QtWidgets.QMainWindow):
                 self.refresh()
                 self.sliderpos = 0
                 self.loadFile.seek(0, 0)
-                for i in range (7):
+                for i in range (9):
                     self.loadFile.readline()
             else:
                 if float(s[0]) >= self.EndTime:
                     self.refresh()
                     self.sliderpos = 0
                     self.loadFile.seek(0, 0)
-                    for i in range (7):
+                    for i in range (9):
                         self.loadFile.readline()
                     break
                                 
@@ -718,7 +729,7 @@ class GUI(QtWidgets.QMainWindow):
                     self.refresh()
                     self.slider.setValue(temp)
                     self.loadFile.seek(0, 0)
-                    for i in range (7):
+                    for i in range (9):
                         self.loadFile.readline()
                     self.sliderpos = self.StartTime
                     msg = self.loadFile.readline() 
@@ -735,9 +746,9 @@ class GUI(QtWidgets.QMainWindow):
                         for i in range(6):
                             self.Data[i][self.l] = float(s[i+1])
         
-                        self.Time[self.l] = float(s[0])
+                        self.Time[self.l] = float(s[0]) - self.StartTime
                         
-                        self.l = self.l + 1
+                        self.l += 1
                         self.ms_len += 1
                     temp = self.Time[self.l-1]
                     self.refresh()
@@ -757,63 +768,70 @@ class GUI(QtWidgets.QMainWindow):
                 
                 if (self.dataRecordingAction.isChecked()):
                     f = open(self.recordingFileName, 'a')
-                    i = self.l
-                    f.write(str(round(self.Time[i], 5)) + " " + str(round(self.Data[0][i], 6)) + " " + str(round(self.Data[1][i], 6)) + " "
-                                 + str(round(self.Data[2][i], 6)) + " " + str(round(self.Data[3][i], 6)) + " "
-                                 + str(round(self.Data[4][i], 6)) + " " + str(round(self.Data[5][i], 6)) + " \n")
+                    f.write(str(round(self.Time[self.l], 6)) + " " + str(round(self.Data[0][self.l], 6)) + " " + str(round(self.Data[1][self.l], 6)) + " "
+                                 + str(round(self.Data[2][self.l], 6)) + " " + str(round(self.Data[3][self.l], 6)) + " "
+                                 + str(round(self.Data[4][self.l], 6)) + " " + str(round(self.Data[5][self.l], 6)) + " \n")
                     f.close() 
                 
-                self.l = self.l + 1
+                self.l += 1
                 self.ms_len += 1
+                self.dt = self.Time[self.l-1] - self.Time[self.l-2]
         
     # Read data from serial                  
     def readFromSerial(self): 
-        msg = self.serialMonitor.serialRead()      
-         
-        # Parsing data from serial buffer
-        msg = msg.decode(errors='ignore')
-        l = self.l
-        if len(msg) >= 2:
-            msg_end_n = msg.rfind("\r", 1)
+        msg = self.serialMonitor.serialRead()
+        
+        if self.serialMonitor.connect == False:
+            self.setSensorsNumber(1)
+            self.sensorsNumber.setValue(1)
+            self.refresh()
+        
+        msg_end_n = 0
+        sensorsNumber = int(self.sensorsNumber.value()) + 1
+        
+        for i in range (len(msg)-1, 1, -1):
+            if msg[i] == 0xFF and msg[i-1] == 0xFF:
+                msg_end_n = i
+                break
+            
+        if msg_end_n != len(msg):
             msg_begin = self.msg_end
-            self.msg_end = msg[msg_end_n:len(msg)]
-            if(self.l > 2):
-                msg = msg_begin + msg[0:msg_end_n]
-            for st in msg.split('\r\n'):
-                s = st.split(' ')
+            self.msg_end = msg[msg_end_n+1:len(msg)]
+            msg = msg_begin + msg[0:msg_end_n]
         
-                if (len(s) == int(self.sensorsNumber.value()) and s[0] != "") :
-                    if ( self.l == self.dataWidth):
+        self.dt = 0
+        n=0
+        # Parsing data from serial buffer
+        l = self.l
+        if len(msg) >= 2 and (len(msg)+1)%(sensorsNumber*2+2) == 0:
+            for i in range(0, len(msg)-1, sensorsNumber*2+2):
+                if ( self.l == self.dataWidth):
                         self.l = 0
-                    for i in range(int(self.sensorsNumber.value())):
-                        if s[i].isdigit():
-                            self.Data[i][self.l] = int(s[i])#/1024.0*5.0/1000.0/self.Gain[i]
-                        else:
-                            self.Data[i][self.l] = 0;
-                        
-                    self.Time[self.l] = self.Time[self.l - 1] + self.dt
-                    self.l = self.l + 1
-                    self.ms_len += 1
-        
-        if (self.dataRecordingAction.isChecked()):
-            f = open(self.recordingFileName, 'a')
-            if l <= self.l:
-                for i in range(l, self.l):
-                    f.write(str(round(self.Time[i], 5)) + " " + str(round(self.Data[0][i], 6)) + " " + str(round(self.Data[1][i], 6)) + " "
-                                 + str(round(self.Data[2][i], 6)) + " " + str(round(self.Data[3][i], 6)) + " "
-                                 + str(round(self.Data[4][i], 6)) + " " + str(round(self.Data[5][i], 6)) + " \n")
-            else:
-                for i in range(l, self.dataWidth):
-                    f.write(str(round(self.Time[i], 5)) + " " + str(round(self.Data[0][i], 6)) + " " + str(round(self.Data[1][i], 6)) + " "
-                                 + str(round(self.Data[2][i], 6)) + " " + str(round(self.Data[3][i], 6)) + " "
-                                 + str(round(self.Data[4][i], 6)) + " " + str(round(self.Data[5][i], 6)) + " \n")
-                for i in range(0, self.l):
-                    f.write(str(round(self.Time[i], 5)) + " " + str(round(self.Data[0][i], 6)) + " " + str(round(self.Data[1][i], 6)) + " "
-                                 + str(round(self.Data[2][i], 6)) + " " + str(round(self.Data[3][i], 6)) + " "
-                                 + str(round(self.Data[4][i], 6)) + " " + str(round(self.Data[5][i], 6)) + " \n")
-            f.close() 
-                
-        
+                for j in range(sensorsNumber - 1):
+                    self.Data[j][self.l] =(int(msg[i+j*2] | msg[i+j*2+1] << 8))
+            
+                self.dt = (int(msg[i+(sensorsNumber-1)*2] | msg[i+(sensorsNumber-1)*2+1] << 8))/1000000     
+                self.Time[self.l] = self.Time[self.l - 1] + self.dt
+                self.l += 1
+                self.sampleNum += 1
+                self.ms_len += 1
+                n += 1
+            if self.sampleNum != 0 and self.Time[self.l-1] != 0 and not self.dataRecordingAction.isChecked() :
+                if abs(self.fs - self.sampleNum/self.Time[self.l-1])/self.fs*100 > 5:
+                    if self.sampleNum/self.Time[self.l-1] > 400:
+                        self.fs = self.sampleNum/self.Time[self.l-1]
+                    
+                    self.dt = self.Time[self.l-1]/self.sampleNum
+                    self.dataWidth = self.dataWidth*self.dt
+                    self.MovingAverage.fs = self.fs
+                    self.dataWidth = int(self.dataWidth/self.dt)
+                    
+                    self.dataWidth = int(12/self.dt)
+                    self.refresh()
+                else:
+                    if self.sampleNum/self.Time[self.l-1] > 400:
+                        self.fs = self.sampleNum/self.Time[self.l-1]
+
         if (self.SignalTypeBox.currentIndex() == 1 ):
             for i in range(int(self.sensorsNumber.value())):
                 ADCmax = (2**(int(self.ADCTypeBox.currentText())) - 1)
@@ -823,6 +841,24 @@ class GUI(QtWidgets.QMainWindow):
                 else:
                     for j in range(l, self.dataWidth): self.Data[i][j] = (self.Data[i][j] - ADCmax/2)*coefficient
                     for j in range(0, self.l): self.Data[i][j] = (self.Data[i][j] - ADCmax/2)*coefficient
+        
+        if (self.dataRecordingAction.isChecked()):
+            f = open(self.recordingFileName, 'a')
+            if l <= self.l:
+                for i in range(l, self.l):
+                    f.write(str(round(self.Time[i], 6)) + " " + str(round(self.Data[0][i], 6)) + " " + str(round(self.Data[1][i], 6)) + " "
+                                  + str(round(self.Data[2][i], 6)) + " " + str(round(self.Data[3][i], 6)) + " "
+                                  + str(round(self.Data[4][i], 6)) + " " + str(round(self.Data[5][i], 6)) + " \n")
+            else:
+                for i in range(l, self.dataWidth):
+                    f.write(str(round(self.Time[i], 6)) + " " + str(round(self.Data[0][i], 6)) + " " + str(round(self.Data[1][i], 6)) + " "
+                                  + str(round(self.Data[2][i], 6)) + " " + str(round(self.Data[3][i], 6)) + " "
+                                  + str(round(self.Data[4][i], 6)) + " " + str(round(self.Data[5][i], 6)) + " \n")
+                for i in range(0, self.l):
+                    f.write(str(round(self.Time[i], 6)) + " " + str(round(self.Data[0][i], 6)) + " " + str(round(self.Data[1][i], 6)) + " "
+                                  + str(round(self.Data[2][i], 6)) + " " + str(round(self.Data[3][i], 6)) + " "
+                                  + str(round(self.Data[4][i], 6)) + " " + str(round(self.Data[5][i], 6)) + " \n")
+            f.close() 
         
     # Butterworth bandpass filter
     def butter_bandpass_filter(self, data, lowcut, highcut, fs, order=4):
@@ -844,18 +880,13 @@ class GUI(QtWidgets.QMainWindow):
     
     # 
     def setSensorsNumber(self, num):
-        if self.liveFromSerialAction.isChecked():
+        if self.liveFromSerialAction.isChecked() and self.serialMonitor.connect:
             self.serialMonitor.ser.write(bytearray([int(num)]))
-        self.delay = 0.1 + 0.01*num
+            time.sleep(0.1) 
+            self.serialMonitor.ser.flushInput()
+        self.delay = 0.07 + 0.01*num
         self.serialMonitor.delay  = self.delay
         self.mainrun.delay = self.delay
-        self.dataWidth = self.dataWidth*self.dt
-        self.dt = (100+310*num)/1000000.
-        self.fs = 1/self.dt
-        self.MovingAverage.fs = self.fs
-        self.dataWidth = int(self.dataWidth/self.dt)
-        
-        self.dataWidth = int(12/self.dt)
         self.refresh()
         
         for i in range(6):
@@ -899,7 +930,9 @@ class SerialMonitor:
             if self.COM != '':
                 try:
                     self.ser = serial.Serial(self.COM, self.baudRate)
-                    self.connect = True  
+                    self.connect = True             
+                    time.sleep(0.1) 
+                    self.ser.flushInput()
                 except SerialException :
                     self.connect = False
                     
@@ -911,7 +944,9 @@ class SerialMonitor:
         msg = bytes(0)
         try:
             msg = self.ser.read( self.ser.inWaiting() )
+            self.connect = True
         except SerialException :
+            self.connect = False
             try:
                self.ser.close()
                self.ser.open()
