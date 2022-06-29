@@ -2,6 +2,7 @@
 # 2022-06-16 by ELEMYO (https://github.com/ELEMYO/ELEMYO GUI)
 # 
 # Changelog:
+#     2022-06-29 - improved playback
 #     2022-06-16 - improved sample rate
 #     2022-06-01 - improved user interface
 #     2020-06-15 - initial release
@@ -724,7 +725,7 @@ class GUI(QtWidgets.QMainWindow):
                         self.loadFile.readline()
                     break
                                 
-                if ((self.slider.value() < int((self.sliderpos - self.StartTime)/(self.EndTime - self.StartTime)*100))):
+                if (self.slider.value() < int((self.sliderpos - self.StartTime)/(self.EndTime - self.StartTime)*100)):
                     temp = self.slider.value()
                     self.refresh()
                     self.slider.setValue(temp)
@@ -736,26 +737,16 @@ class GUI(QtWidgets.QMainWindow):
                     s = msg.split(' ')
                     
                 if ((self.slider.value() > int((self.sliderpos - self.StartTime)/(self.EndTime - self.StartTime)*100))):
-                    while (msg != '' and self.slider.value() > int((float(s[0]) - self.StartTime)/(self.EndTime - self.StartTime)*100)):
+                    time= float(s[0])
+                    while (msg != '' and self.slider.value() > int((time - self.StartTime)/(self.EndTime - self.StartTime)*100)):
                         msg = self.loadFile.readline()
-                        s = msg.split(' ')
-                        
-                        if ( self.l == self.dataWidth):
-                            self.l = 0
-                            
-                        for i in range(6):
-                            self.Data[i][self.l] = float(s[i+1])
-        
-                        self.Time[self.l] = float(s[0]) - self.StartTime
-                        
-                        self.l += 1
-                        self.ms_len += 1
-                    temp = self.Time[self.l-1]
-                    self.refresh()
-                    self.Time[0] = temp
-                    self.l = 1
-
+                        time += self.dt
                     
+                    s = msg.split(' ')
+                    self.refresh()
+                    self.Time[-1] = float(s[0]) - self.StartTime
+
+                s = msg.split(' ')    
                 self.sliderpos = float(s[0])
                 self.slider.setValue(int((self.sliderpos - self.StartTime)/(self.EndTime - self.StartTime)*100))
 
@@ -821,13 +812,13 @@ class GUI(QtWidgets.QMainWindow):
                     if self.sampleNum/self.Time[self.l-1] > 400:
                         self.fs = self.sampleNum/self.Time[self.l-1]
                     
-                    self.dt = self.Time[self.l-1]/self.sampleNum
-                    self.dataWidth = self.dataWidth*self.dt
-                    self.MovingAverage.fs = self.fs
-                    self.dataWidth = int(self.dataWidth/self.dt)
-                    
-                    self.dataWidth = int(12/self.dt)
-                    self.refresh()
+                        self.dt = self.Time[self.l-1]/self.sampleNum
+                        self.dataWidth = self.dataWidth*self.dt
+                        self.MovingAverage.fs = self.fs
+                        self.dataWidth = int(self.dataWidth/self.dt)
+                        
+                        self.dataWidth = int(12/self.dt)
+                        self.refresh()
                 else:
                     if self.sampleNum/self.Time[self.l-1] > 400:
                         self.fs = self.sampleNum/self.Time[self.l-1]
