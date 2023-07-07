@@ -921,6 +921,8 @@ class SerialMonitor:
             if self.COM != '':
                 try:
                     self.ser = serial.Serial(self.COM, self.baudRate)
+                    self.ser.setDTR(False)
+                    self.ser.setRTS(False)
                     self.connect = True             
                     time.sleep(0.1) 
                     self.ser.flushInput()
