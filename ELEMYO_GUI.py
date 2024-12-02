@@ -712,7 +712,7 @@ class GUI(QtWidgets.QMainWindow):
                 else: self.pe[i].clear()
                     
                 # Plot histogram
-                self.pb[i].setOpts(height = self.DataEnvelope[i][-1])
+                self.pb[i].setOpts(height = 2*self.DataEnvelope[i][-1])
             
             for i in range( int(self.sensorsNumber.value()), 6):
                 self.p[i].clear()
