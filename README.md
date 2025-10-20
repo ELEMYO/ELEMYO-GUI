@@ -13,7 +13,7 @@ Supported operating systems: **Windows**, **Linux**, **macOS**.
 - real-time display of **raw** and **smoothed** signals from up to six ELEMYO MYO v.1.* sensors.
 - real-time **FFT** analysys of EMG signals.
 - band-pass and 50/60 Hz notch filters.
-- **record and playback** up to eight **synchronized** channels.
+- **record and playback** up to six **synchronized** channels.
 - Supports EMG signals recording in **ASCII** (.txt) format for compatibility with external analysis software.
 
 ## 3 Support
